@@ -45,6 +45,10 @@ Do not generate:
 - coding help
 - random lists
 - requests for money
+- screaming
+- prank responses
+- bathroom humor
+- unrelated comedy
 
 Start by saying:
 "Thanks for calling The Label Lady at U R Grafix. I’m Jessica’s virtual assistant. What are you working on today?"
@@ -71,12 +75,14 @@ Do not continue your previous sentence if the caller interrupts.
 Do not restart the same sentence after being interrupted.
 
 GOODBYE / END CALL RULES:
-If the caller says bye, goodbye, thank you bye, I have to go, I'll leave, ciao, take care, or anything that clearly means they are ending the call, do not ask another question.
+If the caller says bye, goodbye, thank you bye, I have to go, I'll leave, ciao, take care, I'm done, I'm done talking, or anything that clearly means they are ending the call, do not ask another question.
 Say exactly:
 "Thanks for calling The Label Lady. Have a great day!"
 Then stop talking.
 
-If the caller asks for money, repeats random words, gives nonsense answers, jokes repeatedly, or appears to be testing the system, say exactly:
+TROLL / UNRELATED CALL RULES:
+If the caller asks for money, asks you to scream, asks for jokes, repeats random words, gives nonsense answers, jokes repeatedly, uses bathroom humor, claims unrealistic quantities like billions or trillions, or appears to be testing the system, do not keep asking questions.
+Say exactly:
 "It sounds like this may not be related to our services. Thanks for calling The Label Lady, and have a great day!"
 Then stop talking.
 
@@ -119,7 +125,7 @@ If unsure, say Jessica will review the details personally.
 If they ask for pricing, say:
 "I can help gather the details Jessica needs for an accurate quote. She’ll review everything and follow up with the best option."
 
-End by saying:
+End real project calls by saying:
 "Perfect, I’ll pass this along to Jessica so she can follow up."
 `;
 
@@ -187,6 +193,8 @@ wss.on("connection", (twilioWs) => {
   let openaiReady = false;
   let callEmailSent = false;
   let callEnding = false;
+  let trollScore = 0;
+  let usefulAnswerCount = 0;
 
   const audioQueue = [];
   const transcript = [];
@@ -271,39 +279,170 @@ wss.on("connection", (twilioWs) => {
     return (
       lower.includes("thanks for calling the label lady") ||
       lower.includes("have a great day") ||
-      lower.includes("not be related to our services")
+      lower.includes("not be related to our services") ||
+      lower.includes("uh oh... excuse me")
     );
   }
 
-  function callerIsEnding(text) {
+  function assessCallerText(text) {
     const lower = text.toLowerCase().trim();
 
-    return (
-      lower === "bye" ||
-      lower === "goodbye" ||
-      lower === "bye bye" ||
-      lower === "bye-bye" ||
-      lower.includes("thank you bye") ||
-      lower.includes("thanks bye") ||
-      lower.includes("i have to go") ||
-      lower.includes("i'll leave") ||
-      lower.includes("ill leave") ||
-      lower.includes("ciao") ||
-      lower.includes("take care")
-    );
+    if (lower.includes("the eagle has gas")) {
+      return "easteregg";
+    }
+
+    const goodbyePhrases = [
+      "bye",
+      "bye-bye",
+      "bye bye",
+      "goodbye",
+      "have a good day",
+      "have a great day",
+      "i'm done",
+      "im done",
+      "i'm done talking",
+      "im done talking",
+      "thank you bye",
+      "thanks bye",
+      "i have to go",
+      "i'll leave",
+      "ill leave",
+      "ciao",
+      "take care"
+    ];
+
+    const hardTrollPhrases = [
+      "can you scream",
+      "start screaming",
+      "i need to just scream",
+      "tell me a joke",
+      "design-related joke",
+      "fart",
+      "poop",
+      "can i have money",
+      "i have money can i have money",
+      "i'm a trillionaire",
+      "im a trillionaire",
+      "billion dollar tip",
+      "this concludes public comment",
+      "water, bottle, drinking, beer, pump",
+      "do it all for me",
+      "repeat after me",
+      "grocery list",
+      "tell me a story",
+      "random question",
+      "can you rap",
+      "start rapping",
+      "make a rap",
+      "sing a song",
+      "be warm",
+      "don't do that",
+      "dont do that"
+    ];
+
+    const unrealisticClaims = [
+      "two billion",
+      "2 billion",
+      "billion",
+      "trillion",
+      "200,000",
+      "200000",
+      "million dollar tip",
+      "billion dollar tip"
+    ];
+
+    const usefulBusinessWords = [
+      "label",
+      "labels",
+      "packaging",
+      "package",
+      "bags",
+      "bag",
+      "mylar",
+      "stickers",
+      "sticker",
+      "website",
+      "logo",
+      "branding",
+      "brand",
+      "shirt",
+      "shirts",
+      "apparel",
+      "merch",
+      "business",
+      "product",
+      "jar",
+      "bottle",
+      "box",
+      "boxes",
+      "display",
+      "banner",
+      "quote",
+      "design"
+    ];
+
+    const exactGoodbye = goodbyePhrases.some((phrase) => {
+      return lower === phrase || lower.includes(phrase);
+    });
+
+    if (exactGoodbye) {
+      return "end";
+    }
+
+    if (hardTrollPhrases.some((phrase) => lower.includes(phrase))) {
+      return "troll";
+    }
+
+    if (unrealisticClaims.some((phrase) => lower.includes(phrase))) {
+      trollScore += 2;
+    }
+
+    if (usefulBusinessWords.some((word) => lower.includes(word))) {
+      usefulAnswerCount += 1;
+    } else {
+      trollScore += 1;
+    }
+
+    const hasTooManyRandomWords =
+      lower.split(" ").length >= 5 &&
+      !usefulBusinessWords.some((word) => lower.includes(word));
+
+    if (hasTooManyRandomWords) {
+      trollScore += 1;
+    }
+
+    if (trollScore >= 3 && usefulAnswerCount === 0) {
+      return "troll";
+    }
+
+    if (trollScore >= 5) {
+      return "troll";
+    }
+
+    return "continue";
   }
 
-  function callerLooksLikeTrolling(text) {
-    const lower = text.toLowerCase().trim();
+  function sendClosingResponse(reason) {
+    if (openaiWs.readyState !== WebSocket.OPEN || callEnding) return;
 
-    return (
-      lower.includes("can i have money") ||
-      lower.includes("i have money can i have money") ||
-      lower.includes("this concludes public comment") ||
-      lower.includes("grocery list") ||
-      lower.includes("tell me a story") ||
-      lower.includes("repeat after me")
-    );
+    clearAssistantAudio();
+
+    openaiWs.send(JSON.stringify({
+      type: "response.cancel"
+    }));
+
+    openaiWs.send(JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions:
+          reason === "troll"
+            ? "Say exactly: It sounds like this may not be related to our services. Thanks for calling The Label Lady, and have a great day!"
+            : reason === "easteregg"
+            ? "Say exactly: Uh oh... excuse me. 💨"
+            : "Say exactly: Thanks for calling The Label Lady. Have a great day!"
+      }
+    }));
   }
 
   openaiWs.on("open", () => {
@@ -430,23 +569,22 @@ wss.on("connection", (twilioWs) => {
           const callerText = response.transcript.trim();
           transcript.push(`Caller: ${callerText}`);
 
-          if (callerIsEnding(callerText) || callerLooksLikeTrolling(callerText)) {
-            console.log("Caller end/troll phrase detected.");
+          const assessment = assessCallerText(callerText);
 
-            if (openaiWs.readyState === WebSocket.OPEN && !callEnding) {
-              openaiWs.send(JSON.stringify({
-                type: "response.create",
-                response: {
-                  modalities: ["audio", "text"],
-                  instructions:
-                    callerLooksLikeTrolling(callerText)
-                      ? "Say exactly: It sounds like this may not be related to our services. Thanks for calling The Label Lady, and have a great day!"
-                      : "Say exactly: Thanks for calling The Label Lady. Have a great day!"
-                }
-              }));
-            }
+          if (
+            assessment === "end" ||
+            assessment === "troll" ||
+            assessment === "easteregg"
+          ) {
+            console.log("Ending call from caller assessment:", assessment);
 
-            endCallSoon(2200);
+            sendClosingResponse(assessment);
+
+            endCallSoon(
+              assessment === "easteregg"
+                ? 3000
+                : 2200
+            );
           }
         }
       }
