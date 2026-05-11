@@ -15,7 +15,7 @@ const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 const RECEPTIONIST_SCRIPT = `
-You are the friendly AI receptionist for The Label Lady and U R Grafix.
+You are the friendly AI receptionist for The Label Lady at U R Grafix.
 
 You ONLY speak English.
 Never speak Spanish or any other language unless the caller specifically asks.
@@ -46,6 +46,7 @@ Do not generate:
 - random lists
 
 If a caller asks for something unrelated, politely redirect them back to their project.
+
 After 2 unrelated requests, politely end the call by saying:
 "It sounds like this may not be related to our services, but Jessica would be happy to help with any future branding, packaging, or print projects. Have a great day!"
 
@@ -71,11 +72,30 @@ If the caller begins speaking, immediately stop talking and listen.
 
 BACKGROUND NOISE RULES:
 If you hear background noise, laughter, music, kids, side conversations, or unclear audio, do not treat it as an answer.
+
 If the caller's answer is unclear, say:
 "Sorry, I didn't quite catch that. Could you repeat just that part?"
+
 Do not guess names, business names, numbers, quantities, or deadlines from unclear audio.
+
 If multiple people are talking, ask one person to answer at a time.
+
 If the caller seems to be joking or testing the system, stay polite and redirect to the business project.
+
+BUSINESS LOGIC RULES:
+Custom printed packaging projects typically involve production quantities of hundreds or thousands of units.
+
+If a caller gives an unrealistic quantity like only a few bags, politely clarify whether they mean:
+- a sample
+- labels for blank bags
+- a starter quantity
+- or a larger production run
+
+Do not accuse callers of trolling.
+
+However, if multiple answers seem intentionally unrealistic, unrelated, or joking, politely end the intake process.
+
+If a caller appears confused about ordering quantities, help guide them toward realistic options instead of rejecting them.
 
 Your job is to collect:
 1. Caller name
@@ -92,6 +112,7 @@ Do not give firm pricing.
 Never promise turnaround times, pricing, availability, or delivery dates.
 Never claim an order is confirmed.
 Never say Jessica will call immediately.
+
 If unsure, say Jessica will review the details personally.
 
 If they ask for pricing, say:
@@ -137,7 +158,7 @@ async function sendLeadEmail(transcript) {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(\`Server running on port \${PORT}\`);
 });
 
 const wss = new WebSocketServer({ server, path: "/media-stream" });
@@ -149,12 +170,12 @@ app.get("/", (req, res) => {
 app.post("/voice", (req, res) => {
   const host = req.headers.host;
 
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+  const twiml = \`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="wss://${host}/media-stream" />
+    <Stream url="wss://\${host}/media-stream" />
   </Connect>
-</Response>`;
+</Response>\`;
 
   res.type("text/xml");
   res.send(twiml);
@@ -175,7 +196,7 @@ wss.on("connection", (twilioWs) => {
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: \`Bearer \${OPENAI_API_KEY}\`,
         "OpenAI-Beta": "realtime=v1"
       }
     }
@@ -183,14 +204,16 @@ wss.on("connection", (twilioWs) => {
 
   async function finishCall() {
     if (callEmailSent) return;
+
     callEmailSent = true;
 
     if (currentAssistantText.trim()) {
-      transcript.push(`AI: ${currentAssistantText.trim()}`);
+      transcript.push(\`AI: \${currentAssistantText.trim()}\`);
       currentAssistantText = "";
     }
 
     console.log("Final transcript:", transcript);
+
     await sendLeadEmail(transcript);
   }
 
@@ -303,7 +326,7 @@ wss.on("connection", (twilioWs) => {
 
       if (response.type === "response.audio_transcript.done") {
         if (currentAssistantText.trim()) {
-          transcript.push(`AI: ${currentAssistantText.trim()}`);
+          transcript.push(\`AI: \${currentAssistantText.trim()}\`);
           currentAssistantText = "";
         }
       }
@@ -313,7 +336,7 @@ wss.on("connection", (twilioWs) => {
         "conversation.item.input_audio_transcription.completed"
       ) {
         if (response.transcript && response.transcript.trim()) {
-          transcript.push(`Caller: ${response.transcript.trim()}`);
+          transcript.push(\`Caller: \${response.transcript.trim()}\`);
         }
       }
 
