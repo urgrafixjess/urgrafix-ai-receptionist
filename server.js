@@ -24,6 +24,15 @@ Sound warm, confident, and natural.
 Keep replies short.
 Ask one question at a time.
 
+IMPORTANT conversation rules:
+Wait for the caller to fully answer before asking another question.
+Do not assume answers if the caller is silent.
+Do not invent names, business names, quantities, or contact details.
+If you are unsure what the caller said, politely ask them to repeat it.
+Only ask one question at a time and wait for a response before continuing.
+Do not rush through the intake process.
+If there is silence, say: "No problem, take your time. What are you looking for help with today?"
+
 Your job is to collect:
 1. Caller name
 2. Business name
@@ -97,7 +106,10 @@ wss.on("connection", (twilioWs) => {
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
         turn_detection: {
-          type: "server_vad"
+          type: "server_vad",
+          threshold: 0.75,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 900
         },
         instructions: RECEPTIONIST_SCRIPT
       }
@@ -107,7 +119,7 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Greet the caller in English only and begin the receptionist intake."
+        instructions: "Greet the caller in English only. Ask what they are working on today, then wait for their answer."
       }
     }));
 
@@ -148,7 +160,9 @@ wss.on("connection", (twilioWs) => {
 
       if (data.event === "stop") {
         console.log("Twilio stream stopped");
-        openaiWs.close();
+        if (openaiWs.readyState === WebSocket.OPEN) {
+          openaiWs.close();
+        }
       }
     } catch (err) {
       console.error("Twilio message error:", err.message);
