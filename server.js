@@ -1,6 +1,7 @@
 import express from "express";
 import { WebSocketServer } from "ws";
 import WebSocket from "ws";
+import twilio from "twilio";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -8,6 +9,16 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
+
+const twilioClient =
+  TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
+    ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    : null;
 
 const RECEPTIONIST_SCRIPT = `
 You are the friendly AI receptionist for U R Grafix.
@@ -53,6 +64,38 @@ End by saying:
 "Perfect, I’ll pass this along to Jessica so she can follow up."
 `;
 
+async function sendOwnerText(message) {
+  if (!twilioClient || !TWILIO_PHONE_NUMBER || !OWNER_PHONE_NUMBER) {
+    console.log("SMS not sent. Missing Twilio SMS environment variables.");
+    return;
+  }
+
+  try {
+    await twilioClient.messages.create({
+      body: message.slice(0, 1500),
+      from: TWILIO_PHONE_NUMBER,
+      to: OWNER_PHONE_NUMBER
+    });
+
+    console.log("Owner SMS sent.");
+  } catch (err) {
+    console.error("SMS send failed:", err.message);
+  }
+}
+
+function buildLeadText(transcript) {
+  const cleanTranscript = transcript
+    .filter((line) => line && line.trim())
+    .join("\n")
+    .slice(0, 1000);
+
+  return `🔥 New URGrafix AI call
+
+${cleanTranscript || "Call ended, but no transcript was captured yet."}
+
+- AI Receptionist`;
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
@@ -82,17 +125,34 @@ wss.on("connection", (twilioWs) => {
 
   let streamSid = null;
   let openaiReady = false;
+  let callTextSent = false;
+
   const audioQueue = [];
+  const transcript = [];
+  let currentAssistantText = "";
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
+        "OpenAI-Beta": "realtime=v1"
+      }
     }
   );
+
+  async function finishCall() {
+    if (callTextSent) return;
+    callTextSent = true;
+
+    if (currentAssistantText.trim()) {
+      transcript.push(`AI: ${currentAssistantText.trim()}`);
+      currentAssistantText = "";
+    }
+
+    console.log("Final transcript:", transcript);
+    await sendOwnerText(buildLeadText(transcript));
+  }
 
   openaiWs.on("open", () => {
     console.log("Connected to OpenAI realtime");
@@ -105,6 +165,10 @@ wss.on("connection", (twilioWs) => {
         modalities: ["audio", "text"],
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
+        input_audio_transcription: {
+          model: "whisper-1",
+          language: "en"
+        },
         turn_detection: {
           type: "server_vad",
           threshold: 0.75,
@@ -119,7 +183,8 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Greet the caller in English only. Ask what they are working on today, then wait for their answer."
+        instructions:
+          "Greet the caller in English only. Ask what they are working on today, then wait for their answer."
       }
     }));
 
@@ -148,7 +213,7 @@ wss.on("connection", (twilioWs) => {
       if (data.event === "media") {
         const audioMessage = {
           type: "input_audio_buffer.append",
-          audio: data.media.payload,
+          audio: data.media.payload
         };
 
         if (openaiReady && openaiWs.readyState === WebSocket.OPEN) {
@@ -160,6 +225,8 @@ wss.on("connection", (twilioWs) => {
 
       if (data.event === "stop") {
         console.log("Twilio stream stopped");
+        finishCall();
+
         if (openaiWs.readyState === WebSocket.OPEN) {
           openaiWs.close();
         }
@@ -178,9 +245,26 @@ wss.on("connection", (twilioWs) => {
           event: "media",
           streamSid,
           media: {
-            payload: response.delta,
-          },
+            payload: response.delta
+          }
         }));
+      }
+
+      if (response.type === "response.audio_transcript.delta") {
+        currentAssistantText += response.delta;
+      }
+
+      if (response.type === "response.audio_transcript.done") {
+        if (currentAssistantText.trim()) {
+          transcript.push(`AI: ${currentAssistantText.trim()}`);
+          currentAssistantText = "";
+        }
+      }
+
+      if (response.type === "conversation.item.input_audio_transcription.completed") {
+        if (response.transcript && response.transcript.trim()) {
+          transcript.push(`Caller: ${response.transcript.trim()}`);
+        }
       }
 
       if (response.type === "error") {
@@ -193,6 +277,8 @@ wss.on("connection", (twilioWs) => {
 
   twilioWs.on("close", () => {
     console.log("Twilio disconnected");
+    finishCall();
+
     if (openaiWs.readyState === WebSocket.OPEN) {
       openaiWs.close();
     }
