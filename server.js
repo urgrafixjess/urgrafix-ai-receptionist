@@ -1,8 +1,15 @@
 import express from "express";
+import { WebSocketServer } from "ws";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+const server = app.listen(process.env.PORT || 3000, () => {
+  console.log("URGrafix AI Receptionist server running");
+});
+
+const wss = new WebSocketServer({ server, path: "/media-stream" });
 
 app.get("/", (req, res) => {
   res.send("URGrafix AI Receptionist is running!");
@@ -23,8 +30,26 @@ app.post("/voice", (req, res) => {
   res.send(twiml);
 });
 
-const PORT = process.env.PORT || 3000;
+wss.on("connection", (ws) => {
+  console.log("Twilio media stream connected");
 
-app.listen(PORT, () => {
-  console.log(`URGrafix AI Receptionist server running on port ${PORT}`);
+  ws.on("message", (message) => {
+    const data = JSON.parse(message.toString());
+
+    if (data.event === "start") {
+      console.log("Call started:", data.start.callSid);
+    }
+
+    if (data.event === "media") {
+      // Audio is arriving here. Next step: connect this to OpenAI.
+    }
+
+    if (data.event === "stop") {
+      console.log("Call ended");
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("Twilio media stream disconnected");
+  });
 });
