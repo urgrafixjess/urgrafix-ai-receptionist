@@ -8,6 +8,6 @@
   "dependencies": {
     "express": "^4.18.3",
     "ws": "^8.16.0",
-    "twilio": "^5.0.0"
+    "resend": "^4.0.0"
   }
 }
