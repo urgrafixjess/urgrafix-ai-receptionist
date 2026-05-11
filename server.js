@@ -1,12 +1,17 @@
 import express from "express";
 import { WebSocketServer } from "ws";
+import WebSocket from "ws";
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const server = app.listen(process.env.PORT || 3000, () => {
-  console.log("URGrafix AI Receptionist server running");
+const PORT = process.env.PORT || 3000;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server, path: "/media-stream" });
@@ -20,7 +25,6 @@ app.post("/voice", (req, res) => {
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thanks for calling U R Grafix. Connecting you to the AI receptionist now.</Say>
   <Connect>
     <Stream url="wss://${host}/media-stream" />
   </Connect>
@@ -30,26 +34,64 @@ app.post("/voice", (req, res) => {
   res.send(twiml);
 });
 
-wss.on("connection", (ws) => {
-  console.log("Twilio media stream connected");
+wss.on("connection", (twilioWs) => {
+  console.log("Twilio connected");
 
-  ws.on("message", (message) => {
+  const openaiWs = new WebSocket(
+    "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+    {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    }
+  );
+
+  openaiWs.on("open", () => {
+    console.log("Connected to OpenAI realtime");
+
+    openaiWs.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          voice: "alloy",
+          instructions:
+            "You are the friendly AI receptionist for URGrafix. You help customers with custom packaging, labels, branding, websites, merch, and print services. Be warm, conversational, and concise.",
+          modalities: ["audio", "text"],
+        },
+      })
+    );
+  });
+
+  twilioWs.on("message", (message) => {
     const data = JSON.parse(message.toString());
 
-    if (data.event === "start") {
-      console.log("Call started:", data.start.callSid);
-    }
-
     if (data.event === "media") {
-      // Audio is arriving here. Next step: connect this to OpenAI.
-    }
-
-    if (data.event === "stop") {
-      console.log("Call ended");
+      openaiWs.send(
+        JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: data.media.payload,
+        })
+      );
     }
   });
 
-  ws.on("close", () => {
-    console.log("Twilio media stream disconnected");
+  openaiWs.on("message", (message) => {
+    const response = JSON.parse(message.toString());
+
+    if (response.type === "response.audio.delta") {
+      twilioWs.send(
+        JSON.stringify({
+          event: "media",
+          media: {
+            payload: response.delta,
+          },
+        })
+      );
+    }
+  });
+
+  twilioWs.on("close", () => {
+    openaiWs.close();
   });
 });
