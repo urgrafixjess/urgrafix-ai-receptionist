@@ -91,6 +91,7 @@ If you hear background noise, laughter, music, kids, side conversations, or uncl
 If the caller's answer is unclear, say:
 "Sorry, I didn't quite catch that. Could you repeat just that part?"
 Do not guess names, business names, numbers, quantities, or deadlines from unclear audio.
+Do not assume trolling from short or simple answers.
 If multiple people are talking, ask one person to answer at a time.
 
 BUSINESS LOGIC RULES:
@@ -334,10 +335,7 @@ wss.on("connection", (twilioWs) => {
       "can you rap",
       "start rapping",
       "make a rap",
-      "sing a song",
-      "be warm",
-      "don't do that",
-      "dont do that"
+      "sing a song"
     ];
 
     const unrealisticClaims = [
@@ -399,7 +397,7 @@ wss.on("connection", (twilioWs) => {
 
     if (usefulBusinessWords.some((word) => lower.includes(word))) {
       usefulAnswerCount += 1;
-    } else {
+    } else if (lower.length > 12) {
       trollScore += 1;
     }
 
@@ -411,11 +409,11 @@ wss.on("connection", (twilioWs) => {
       trollScore += 1;
     }
 
-    if (trollScore >= 3 && usefulAnswerCount === 0) {
+    if (trollScore >= 6 && usefulAnswerCount === 0) {
       return "troll";
     }
 
-    if (trollScore >= 5) {
+    if (trollScore >= 8) {
       return "troll";
     }
 
