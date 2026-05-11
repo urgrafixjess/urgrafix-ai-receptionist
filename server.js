@@ -46,7 +46,6 @@ Do not generate:
 - random lists
 
 If a caller asks for something unrelated, politely redirect them back to their project.
-
 After 2 unrelated requests, politely end the call by saying:
 "It sounds like this may not be related to our services, but Jessica would be happy to help with any future branding, packaging, or print projects. Have a great day!"
 
@@ -72,14 +71,10 @@ If the caller begins speaking, immediately stop talking and listen.
 
 BACKGROUND NOISE RULES:
 If you hear background noise, laughter, music, kids, side conversations, or unclear audio, do not treat it as an answer.
-
 If the caller's answer is unclear, say:
 "Sorry, I didn't quite catch that. Could you repeat just that part?"
-
 Do not guess names, business names, numbers, quantities, or deadlines from unclear audio.
-
 If multiple people are talking, ask one person to answer at a time.
-
 If the caller seems to be joking or testing the system, stay polite and redirect to the business project.
 
 BUSINESS LOGIC RULES:
@@ -92,7 +87,6 @@ If a caller gives an unrealistic quantity like only a few bags, politely clarify
 - or a larger production run
 
 Do not accuse callers of trolling.
-
 However, if multiple answers seem intentionally unrealistic, unrelated, or joking, politely end the intake process.
 
 If a caller appears confused about ordering quantities, help guide them toward realistic options instead of rejecting them.
@@ -112,7 +106,6 @@ Do not give firm pricing.
 Never promise turnaround times, pricing, availability, or delivery dates.
 Never claim an order is confirmed.
 Never say Jessica will call immediately.
-
 If unsure, say Jessica will review the details personally.
 
 If they ask for pricing, say:
@@ -137,9 +130,7 @@ async function sendLeadEmail(transcript) {
   const html = `
     <h2>🔥 New AI Call Lead</h2>
     <p><strong>Source:</strong> AI Receptionist</p>
-
     <h3>Transcript</h3>
-
     <pre style="white-space:pre-wrap;font-family:Arial,sans-serif;background:#f6f6f6;padding:14px;border-radius:8px;">${transcriptText}</pre>
   `;
 
@@ -158,7 +149,7 @@ async function sendLeadEmail(transcript) {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
+  console.log(`Server running on port ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server, path: "/media-stream" });
@@ -170,12 +161,12 @@ app.get("/", (req, res) => {
 app.post("/voice", (req, res) => {
   const host = req.headers.host;
 
-  const twiml = \`<?xml version="1.0" encoding="UTF-8"?>
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="wss://\${host}/media-stream" />
+    <Stream url="wss://${host}/media-stream" />
   </Connect>
-</Response>\`;
+</Response>`;
 
   res.type("text/xml");
   res.send(twiml);
@@ -196,7 +187,7 @@ wss.on("connection", (twilioWs) => {
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
       headers: {
-        Authorization: \`Bearer \${OPENAI_API_KEY}\`,
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "OpenAI-Beta": "realtime=v1"
       }
     }
@@ -204,46 +195,38 @@ wss.on("connection", (twilioWs) => {
 
   async function finishCall() {
     if (callEmailSent) return;
-
     callEmailSent = true;
 
     if (currentAssistantText.trim()) {
-      transcript.push(\`AI: \${currentAssistantText.trim()}\`);
+      transcript.push(`AI: ${currentAssistantText.trim()}`);
       currentAssistantText = "";
     }
 
     console.log("Final transcript:", transcript);
-
     await sendLeadEmail(transcript);
   }
 
   openaiWs.on("open", () => {
     console.log("Connected to OpenAI realtime");
-
     openaiReady = true;
 
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
         voice: "shimmer",
-
         modalities: ["audio", "text"],
-
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
-
         input_audio_transcription: {
           model: "whisper-1",
           language: "en"
         },
-
         turn_detection: {
           type: "server_vad",
           threshold: 0.88,
           prefix_padding_ms: 400,
           silence_duration_ms: 950
         },
-
         instructions: RECEPTIONIST_SCRIPT
       }
     }));
@@ -294,7 +277,6 @@ wss.on("connection", (twilioWs) => {
 
       if (data.event === "stop") {
         console.log("Twilio stream stopped");
-
         finishCall();
 
         if (openaiWs.readyState === WebSocket.OPEN) {
@@ -326,17 +308,14 @@ wss.on("connection", (twilioWs) => {
 
       if (response.type === "response.audio_transcript.done") {
         if (currentAssistantText.trim()) {
-          transcript.push(\`AI: \${currentAssistantText.trim()}\`);
+          transcript.push(`AI: ${currentAssistantText.trim()}`);
           currentAssistantText = "";
         }
       }
 
-      if (
-        response.type ===
-        "conversation.item.input_audio_transcription.completed"
-      ) {
+      if (response.type === "conversation.item.input_audio_transcription.completed") {
         if (response.transcript && response.transcript.trim()) {
-          transcript.push(\`Caller: \${response.transcript.trim()}\`);
+          transcript.push(`Caller: ${response.transcript.trim()}`);
         }
       }
 
@@ -350,7 +329,6 @@ wss.on("connection", (twilioWs) => {
 
   twilioWs.on("close", () => {
     console.log("Twilio disconnected");
-
     finishCall();
 
     if (openaiWs.readyState === WebSocket.OPEN) {
