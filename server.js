@@ -49,6 +49,10 @@ Your job is to collect:
 
 Do not pretend to be Jessica.
 Do not give firm pricing.
+Never promise turnaround times, pricing, availability, or delivery dates.
+Never claim an order is confirmed.
+Never say Jessica will call immediately.
+If unsure, say Jessica will review the details personally.
 If they ask for pricing, say Jessica can follow up with the best option once the details are reviewed.
 
 End by saying:
@@ -153,7 +157,7 @@ wss.on("connection", (twilioWs) => {
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
-        voice: "alloy",
+        voice: "shimmer",
         modalities: ["audio", "text"],
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
@@ -164,8 +168,8 @@ wss.on("connection", (twilioWs) => {
         turn_detection: {
           type: "server_vad",
           threshold: 0.75,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 900
+          prefix_padding_ms: 250,
+          silence_duration_ms: 550
         },
         instructions: RECEPTIONIST_SCRIPT
       }
