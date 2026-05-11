@@ -44,15 +44,12 @@ Do not generate:
 - homework
 - coding help
 - random lists
-
-If a caller asks for something unrelated, politely redirect them back to their project.
-After 2 unrelated requests, politely end the call by saying:
-"It sounds like this may not be related to our services, but Jessica would be happy to help with any future branding, packaging, or print projects. Have a great day!"
+- requests for money
 
 Start by saying:
 "Thanks for calling The Label Lady at U R Grafix. I’m Jessica’s virtual assistant. What are you working on today?"
 
-Sound warm, confident, and natural.
+Sound warm, calm, confident, and natural.
 Keep replies short.
 Ask one question at a time.
 
@@ -66,8 +63,22 @@ Do not rush through the intake process.
 Allow natural pauses in conversation.
 Do not repeat prompts if the caller pauses briefly.
 Allow natural silence without speaking over the caller.
-Never say "whenever you're ready" or similar filler phrases repeatedly.
+Never say "whenever you're ready" repeatedly.
+Do not say "got it" unless the caller gave clear useful information.
 If the caller begins speaking, immediately stop talking and listen.
+If the caller starts speaking while you are talking, stop immediately and listen.
+Do not continue your previous sentence if the caller interrupts.
+Do not restart the same sentence after being interrupted.
+
+GOODBYE / END CALL RULES:
+If the caller says bye, goodbye, thank you bye, I have to go, I'll leave, ciao, take care, or anything that clearly means they are ending the call, do not ask another question.
+Say exactly:
+"Thanks for calling The Label Lady. Have a great day!"
+Then stop talking.
+
+If the caller asks for money, repeats random words, gives nonsense answers, jokes repeatedly, or appears to be testing the system, say exactly:
+"It sounds like this may not be related to our services. Thanks for calling The Label Lady, and have a great day!"
+Then stop talking.
 
 BACKGROUND NOISE RULES:
 If you hear background noise, laughter, music, kids, side conversations, or unclear audio, do not treat it as an answer.
@@ -75,7 +86,6 @@ If the caller's answer is unclear, say:
 "Sorry, I didn't quite catch that. Could you repeat just that part?"
 Do not guess names, business names, numbers, quantities, or deadlines from unclear audio.
 If multiple people are talking, ask one person to answer at a time.
-If the caller seems to be joking or testing the system, stay polite and redirect to the business project.
 
 BUSINESS LOGIC RULES:
 Custom printed packaging projects typically involve production quantities of hundreds or thousands of units.
@@ -87,8 +97,6 @@ If a caller gives an unrealistic quantity like only a few bags, politely clarify
 - or a larger production run
 
 Do not accuse callers of trolling.
-However, if multiple answers seem intentionally unrealistic, unrelated, or joking, politely end the intake process.
-
 If a caller appears confused about ordering quantities, help guide them toward realistic options instead of rejecting them.
 
 Your job is to collect:
@@ -178,6 +186,7 @@ wss.on("connection", (twilioWs) => {
   let streamSid = null;
   let openaiReady = false;
   let callEmailSent = false;
+  let callEnding = false;
 
   const audioQueue = [];
   const transcript = [];
@@ -206,6 +215,97 @@ wss.on("connection", (twilioWs) => {
     await sendLeadEmail(transcript);
   }
 
+  function clearAssistantAudio() {
+    if (!streamSid) return;
+
+    try {
+      twilioWs.send(JSON.stringify({
+        event: "clear",
+        streamSid
+      }));
+    } catch (err) {
+      console.error("Failed to clear Twilio audio:", err.message);
+    }
+
+    try {
+      if (openaiWs.readyState === WebSocket.OPEN) {
+        openaiWs.send(JSON.stringify({
+          type: "response.cancel"
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to cancel OpenAI response:", err.message);
+    }
+  }
+
+  async function endCallSoon(delayMs = 1800) {
+    if (callEnding) return;
+    callEnding = true;
+
+    console.log("Ending call soon.");
+
+    setTimeout(async () => {
+      await finishCall();
+
+      try {
+        if (twilioWs.readyState === WebSocket.OPEN) {
+          twilioWs.close();
+        }
+      } catch (err) {
+        console.error("Failed to close Twilio socket:", err.message);
+      }
+
+      try {
+        if (openaiWs.readyState === WebSocket.OPEN) {
+          openaiWs.close();
+        }
+      } catch (err) {
+        console.error("Failed to close OpenAI socket:", err.message);
+      }
+    }, delayMs);
+  }
+
+  function shouldEndFromAssistantText(text) {
+    const lower = text.toLowerCase();
+
+    return (
+      lower.includes("thanks for calling the label lady") ||
+      lower.includes("have a great day") ||
+      lower.includes("not be related to our services")
+    );
+  }
+
+  function callerIsEnding(text) {
+    const lower = text.toLowerCase().trim();
+
+    return (
+      lower === "bye" ||
+      lower === "goodbye" ||
+      lower === "bye bye" ||
+      lower === "bye-bye" ||
+      lower.includes("thank you bye") ||
+      lower.includes("thanks bye") ||
+      lower.includes("i have to go") ||
+      lower.includes("i'll leave") ||
+      lower.includes("ill leave") ||
+      lower.includes("ciao") ||
+      lower.includes("take care")
+    );
+  }
+
+  function callerLooksLikeTrolling(text) {
+    const lower = text.toLowerCase().trim();
+
+    return (
+      lower.includes("can i have money") ||
+      lower.includes("i have money can i have money") ||
+      lower.includes("this concludes public comment") ||
+      lower.includes("grocery list") ||
+      lower.includes("tell me a story") ||
+      lower.includes("repeat after me")
+    );
+  }
+
   openaiWs.on("open", () => {
     console.log("Connected to OpenAI realtime");
     openaiReady = true;
@@ -223,9 +323,9 @@ wss.on("connection", (twilioWs) => {
         },
         turn_detection: {
           type: "server_vad",
-          threshold: 0.88,
-          prefix_padding_ms: 400,
-          silence_duration_ms: 950
+          threshold: 0.72,
+          prefix_padding_ms: 600,
+          silence_duration_ms: 1800
         },
         instructions: RECEPTIONIST_SCRIPT
       }
@@ -255,6 +355,8 @@ wss.on("connection", (twilioWs) => {
 
   twilioWs.on("message", (message) => {
     try {
+      if (callEnding) return;
+
       const data = JSON.parse(message.toString());
 
       if (data.event === "start") {
@@ -292,7 +394,11 @@ wss.on("connection", (twilioWs) => {
     try {
       const response = JSON.parse(message.toString());
 
-      if (response.type === "response.audio.delta" && streamSid) {
+      if (response.type === "input_audio_buffer.speech_started") {
+        clearAssistantAudio();
+      }
+
+      if (response.type === "response.audio.delta" && streamSid && !callEnding) {
         twilioWs.send(JSON.stringify({
           event: "media",
           streamSid,
@@ -308,14 +414,40 @@ wss.on("connection", (twilioWs) => {
 
       if (response.type === "response.audio_transcript.done") {
         if (currentAssistantText.trim()) {
-          transcript.push(`AI: ${currentAssistantText.trim()}`);
+          const finalText = currentAssistantText.trim();
+          transcript.push(`AI: ${finalText}`);
           currentAssistantText = "";
+
+          if (shouldEndFromAssistantText(finalText)) {
+            console.log("Assistant closing phrase detected.");
+            endCallSoon(1800);
+          }
         }
       }
 
       if (response.type === "conversation.item.input_audio_transcription.completed") {
         if (response.transcript && response.transcript.trim()) {
-          transcript.push(`Caller: ${response.transcript.trim()}`);
+          const callerText = response.transcript.trim();
+          transcript.push(`Caller: ${callerText}`);
+
+          if (callerIsEnding(callerText) || callerLooksLikeTrolling(callerText)) {
+            console.log("Caller end/troll phrase detected.");
+
+            if (openaiWs.readyState === WebSocket.OPEN && !callEnding) {
+              openaiWs.send(JSON.stringify({
+                type: "response.create",
+                response: {
+                  modalities: ["audio", "text"],
+                  instructions:
+                    callerLooksLikeTrolling(callerText)
+                      ? "Say exactly: It sounds like this may not be related to our services. Thanks for calling The Label Lady, and have a great day!"
+                      : "Say exactly: Thanks for calling The Label Lady. Have a great day!"
+                }
+              }));
+            }
+
+            endCallSoon(2200);
+          }
         }
       }
 
