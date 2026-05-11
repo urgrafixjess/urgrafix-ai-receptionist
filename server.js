@@ -1,7 +1,7 @@
 import express from "express";
 import { WebSocketServer } from "ws";
 import WebSocket from "ws";
-import twilio from "twilio";
+import { Resend } from "resend";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -9,16 +9,10 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL;
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
-const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
-
-const twilioClient =
-  TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
-    ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    : null;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 const RECEPTIONIST_SCRIPT = `
 You are the friendly AI receptionist for U R Grafix.
@@ -42,7 +36,6 @@ Do not invent names, business names, quantities, or contact details.
 If you are unsure what the caller said, politely ask them to repeat it.
 Only ask one question at a time and wait for a response before continuing.
 Do not rush through the intake process.
-If there is silence, say: "No problem, take your time. What are you looking for help with today?"
 
 Your job is to collect:
 1. Caller name
@@ -57,43 +50,42 @@ Your job is to collect:
 Do not pretend to be Jessica.
 Do not give firm pricing.
 If they ask for pricing, say Jessica can follow up with the best option once the details are reviewed.
-If they have an existing order, collect their name, order details, and what they need help with.
-If they are not a good fit or are just browsing, still be polite and collect the basics.
 
 End by saying:
 "Perfect, I’ll pass this along to Jessica so she can follow up."
 `;
 
-async function sendOwnerText(message) {
-  if (!twilioClient || !TWILIO_PHONE_NUMBER || !OWNER_PHONE_NUMBER) {
-    console.log("SMS not sent. Missing Twilio SMS environment variables.");
+async function sendLeadEmail(transcript) {
+  if (!resend || !NOTIFICATION_EMAIL) {
+    console.log("Email not sent. Missing RESEND_API_KEY or NOTIFICATION_EMAIL.");
     return;
   }
 
+  const transcriptText = transcript.length
+    ? transcript.join("\n")
+    : "Call ended, but no transcript was captured.";
+
+  const subject = "🔥 New URGrafix AI Call Lead";
+
+  const html = `
+    <h2>🔥 New URGrafix AI Call Lead</h2>
+    <p><strong>Source:</strong> AI Receptionist</p>
+    <h3>Transcript</h3>
+    <pre style="white-space:pre-wrap;font-family:Arial,sans-serif;background:#f6f6f6;padding:14px;border-radius:8px;">${transcriptText}</pre>
+  `;
+
   try {
-    await twilioClient.messages.create({
-      body: message.slice(0, 1500),
-      from: TWILIO_PHONE_NUMBER,
-      to: OWNER_PHONE_NUMBER
+    await resend.emails.send({
+      from: "URGrafix AI Receptionist <onboarding@resend.dev>",
+      to: NOTIFICATION_EMAIL,
+      subject,
+      html
     });
 
-    console.log("Owner SMS sent.");
+    console.log("Lead email sent.");
   } catch (err) {
-    console.error("SMS send failed:", err.message);
+    console.error("Email send failed:", err.message);
   }
-}
-
-function buildLeadText(transcript) {
-  const cleanTranscript = transcript
-    .filter((line) => line && line.trim())
-    .join("\n")
-    .slice(0, 1000);
-
-  return `🔥 New URGrafix AI call
-
-${cleanTranscript || "Call ended, but no transcript was captured yet."}
-
-- AI Receptionist`;
 }
 
 const server = app.listen(PORT, () => {
@@ -125,7 +117,7 @@ wss.on("connection", (twilioWs) => {
 
   let streamSid = null;
   let openaiReady = false;
-  let callTextSent = false;
+  let callEmailSent = false;
 
   const audioQueue = [];
   const transcript = [];
@@ -142,8 +134,8 @@ wss.on("connection", (twilioWs) => {
   );
 
   async function finishCall() {
-    if (callTextSent) return;
-    callTextSent = true;
+    if (callEmailSent) return;
+    callEmailSent = true;
 
     if (currentAssistantText.trim()) {
       transcript.push(`AI: ${currentAssistantText.trim()}`);
@@ -151,7 +143,7 @@ wss.on("connection", (twilioWs) => {
     }
 
     console.log("Final transcript:", transcript);
-    await sendOwnerText(buildLeadText(transcript));
+    await sendLeadEmail(transcript);
   }
 
   openaiWs.on("open", () => {
