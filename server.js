@@ -74,7 +74,11 @@ Do not pretend to be Jessica. Say you are her virtual assistant.
     }));
 
     openaiWs.send(JSON.stringify({
-      type: "response.create"
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: "Greet the caller warmly and introduce yourself as the U R Grafix virtual receptionist. Ask what they are working on today."
+      }
     }));
 
     while (audioQueue.length > 0) {
