@@ -36,6 +36,7 @@ Do not invent names, business names, quantities, or contact details.
 If you are unsure what the caller said, politely ask them to repeat it.
 Only ask one question at a time and wait for a response before continuing.
 Do not rush through the intake process.
+Allow natural pauses in conversation.
 
 Your job is to collect:
 1. Caller name
@@ -53,7 +54,6 @@ Never promise turnaround times, pricing, availability, or delivery dates.
 Never claim an order is confirmed.
 Never say Jessica will call immediately.
 If unsure, say Jessica will review the details personally.
-If they ask for pricing, say Jessica can follow up with the best option once the details are reviewed.
 
 End by saying:
 "Perfect, I’ll pass this along to Jessica so she can follow up."
@@ -74,7 +74,9 @@ async function sendLeadEmail(transcript) {
   const html = `
     <h2>🔥 New URGrafix AI Call Lead</h2>
     <p><strong>Source:</strong> AI Receptionist</p>
+
     <h3>Transcript</h3>
+
     <pre style="white-space:pre-wrap;font-family:Arial,sans-serif;background:#f6f6f6;padding:14px;border-radius:8px;">${transcriptText}</pre>
   `;
 
@@ -147,30 +149,37 @@ wss.on("connection", (twilioWs) => {
     }
 
     console.log("Final transcript:", transcript);
+
     await sendLeadEmail(transcript);
   }
 
   openaiWs.on("open", () => {
     console.log("Connected to OpenAI realtime");
+
     openaiReady = true;
 
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
         voice: "shimmer",
+
         modalities: ["audio", "text"],
+
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
+
         input_audio_transcription: {
           model: "whisper-1",
           language: "en"
         },
+
         turn_detection: {
           type: "server_vad",
-          threshold: 0.75,
-          prefix_padding_ms: 250,
-          silence_duration_ms: 550
+          threshold: 0.82,
+          prefix_padding_ms: 350,
+          silence_duration_ms: 850
         },
+
         instructions: RECEPTIONIST_SCRIPT
       }
     }));
@@ -180,7 +189,7 @@ wss.on("connection", (twilioWs) => {
       response: {
         modalities: ["audio", "text"],
         instructions:
-          "Greet the caller in English only. Ask what they are working on today, then wait for their answer."
+          "Greet the caller in English only. Ask what they are working on today and wait for their answer before continuing."
       }
     }));
 
@@ -221,6 +230,7 @@ wss.on("connection", (twilioWs) => {
 
       if (data.event === "stop") {
         console.log("Twilio stream stopped");
+
         finishCall();
 
         if (openaiWs.readyState === WebSocket.OPEN) {
@@ -257,7 +267,10 @@ wss.on("connection", (twilioWs) => {
         }
       }
 
-      if (response.type === "conversation.item.input_audio_transcription.completed") {
+      if (
+        response.type ===
+        "conversation.item.input_audio_transcription.completed"
+      ) {
         if (response.transcript && response.transcript.trim()) {
           transcript.push(`Caller: ${response.transcript.trim()}`);
         }
@@ -273,6 +286,7 @@ wss.on("connection", (twilioWs) => {
 
   twilioWs.on("close", () => {
     console.log("Twilio disconnected");
+
     finishCall();
 
     if (openaiWs.readyState === WebSocket.OPEN) {
